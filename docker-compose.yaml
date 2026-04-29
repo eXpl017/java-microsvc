@@ -1,0 +1,96 @@
+version: '3.8'
+
+networks:
+  microservices-net:
+    driver: bridge
+
+services:
+
+  postgres-orders:
+    image: postgres:15-alpine
+    container_name: postgres-orders
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      TZ: UTC
+      PGTZ: UTC
+    networks:
+      - microservices-net
+
+  postgres-payments:
+    image: postgres:15-alpine
+    container_name: postgres-payments
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: secret
+      TZ: UTC
+      PGTZ: UTC
+    networks:
+      - microservices-net
+
+  eureka-server:
+    build: ./eureka-server
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    environment:
+      TZ: UTC
+    networks:
+      - microservices-net
+
+  config-server:
+    build: ./config-server
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    environment:
+      TZ: UTC
+    depends_on:
+      - eureka-server
+    networks:
+      - microservices-net
+
+  order-service:
+    build: ./order-service
+    container_name: order-service
+    ports:
+      - "8081:8081"
+    environment:
+      TZ: UTC
+    depends_on:
+      - postgres-orders
+      - config-server
+      - eureka-server
+    networks:
+      - microservices-net
+
+  payment-service:
+    build: ./payment-service
+    container_name: payment-service
+    ports:
+      - "8082:8082"
+    environment:
+      TZ: UTC
+    depends_on:
+      - postgres-payments
+      - config-server
+      - eureka-server
+    networks:
+      - microservices-net
+
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      TZ: UTC
+    depends_on:
+      - eureka-server
+      - config-server
+      - order-service
+      - payment-service
+    networks:
+      - microservices-net
