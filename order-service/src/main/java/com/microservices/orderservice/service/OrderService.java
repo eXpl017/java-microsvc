@@ -4,15 +4,19 @@ import com.microservices.orderservice.entity.Order;
 import com.microservices.orderservice.exception.OrderNotFoundException;
 import com.microservices.orderservice.repository.OrderRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.client.WebClient;
 import java.util.List;
 
 @Service
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final WebClient.Builder webClientBuilder;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository,
+                        WebClient.Builder webClientBuilder) {
         this.orderRepository = orderRepository;
+        this.webClientBuilder = webClientBuilder;
     }
 
     public List<Order> getAllOrders() {
@@ -29,8 +33,26 @@ public class OrderService {
     }
 
     public Order createOrder(Order order) {
-        order.setStatus("pending");
-        return orderRepository.save(order);
+        // save order first with PENDING status
+        order.setStatus("PENDING");
+        Order saved = orderRepository.save(order);
+
+        // call payment-service to process payment
+        try {
+            webClientBuilder.build()
+                    .post()
+                    .uri("http://payment-service/payments/process")
+                    .bodyValue(new PaymentRequest(saved.getId(), 100.0))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+
+            saved.setStatus("PAID");
+        } catch (Exception e) {
+            saved.setStatus("PAYMENT_FAILED");
+        }
+
+        return orderRepository.save(saved);
     }
 
     public Order updateOrder(Long id, Order updated) {
@@ -43,5 +65,16 @@ public class OrderService {
 
     public void deleteOrder(Long id) {
         orderRepository.deleteById(id);
+    }
+
+    // simple inner class to send payment request
+    static class PaymentRequest {
+        public Long orderId;
+        public Double amount;
+
+        public PaymentRequest(Long orderId, Double amount) {
+            this.orderId = orderId;
+            this.amount = amount;
+        }
     }
 }
